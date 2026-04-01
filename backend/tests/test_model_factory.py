@@ -101,6 +101,18 @@ def test_raises_when_model_not_found(monkeypatch):
         factory_module.create_chat_model(name="ghost-model")
 
 
+def test_appends_all_tracing_callbacks(monkeypatch):
+    cfg = _make_app_config([_make_model("alpha")])
+    _patch_factory(monkeypatch, cfg)
+    monkeypatch.setattr(factory_module, "is_tracing_enabled", lambda: True)
+    monkeypatch.setattr(factory_module, "build_tracing_callbacks", lambda: ["smith-callback", "langfuse-callback"])
+
+    FakeChatModel.captured_kwargs = {}
+    model = factory_module.create_chat_model(name="alpha")
+
+    assert model.callbacks == ["smith-callback", "langfuse-callback"]
+
+
 # ---------------------------------------------------------------------------
 # thinking_enabled=True
 # ---------------------------------------------------------------------------
