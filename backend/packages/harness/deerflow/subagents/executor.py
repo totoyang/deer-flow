@@ -19,6 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
 from deerflow.subagents.config import SubagentConfig
+from deerflow.tracing import bind_runnable_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,14 @@ class SubagentExecutor:
 
         try:
             agent = self._create_agent()
+            agent = bind_runnable_tracing(
+                agent,
+                metadata={
+                    "thread_id": self.thread_id,
+                    "subagent_name": self.config.name,
+                    "subagent_trace_id": self.trace_id,
+                },
+            )
             state = self._build_initial_state(task)
 
             # Build config with thread_id for sandbox access and recursion limit
@@ -235,7 +244,6 @@ class SubagentExecutor:
             if self.thread_id:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
-
             logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns}")
 
             # Use stream instead of invoke to get real-time updates

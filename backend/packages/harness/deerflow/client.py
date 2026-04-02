@@ -41,6 +41,7 @@ from deerflow.config.extensions_config import ExtensionsConfig, SkillStateConfig
 from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
 from deerflow.skills.installer import install_skill_from_archive
+from deerflow.tracing import bind_runnable_tracing
 from deerflow.uploads.manager import (
     claim_unique_filename,
     delete_file_safe,
@@ -350,6 +351,7 @@ class DeerFlowClient:
 
         config = self._get_runnable_config(thread_id, **kwargs)
         self._ensure_agent(config)
+        agent = bind_runnable_tracing(self._agent, metadata={"thread_id": thread_id})
 
         state: dict[str, Any] = {"messages": [HumanMessage(content=message)]}
         context = {"thread_id": thread_id}
@@ -359,7 +361,7 @@ class DeerFlowClient:
         seen_ids: set[str] = set()
         cumulative_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
-        for chunk in self._agent.stream(state, config=config, context=context, stream_mode="values"):
+        for chunk in agent.stream(state, config=config, context=context, stream_mode="values"):
             messages = chunk.get("messages", [])
 
             for msg in messages:

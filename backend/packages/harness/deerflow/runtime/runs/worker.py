@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from deerflow.runtime.serialization import serialize
 from deerflow.runtime.stream_bridge import StreamBridge
+from deerflow.tracing import bind_runnable_tracing
 
 from .manager import RunManager, RunRecord
 from .schemas import RunStatus
@@ -94,6 +95,13 @@ async def run_agent(
 
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
+        agent = bind_runnable_tracing(
+            agent,
+            metadata={
+                "run_id": run_id,
+                "thread_id": thread_id,
+            },
+        )
 
         # 4. Attach checkpointer and store
         if checkpointer is not None:

@@ -171,3 +171,98 @@ def test_create_langfuse_handler_initializes_client_before_handler(monkeypatch):
             },
         ),
     ]
+
+
+def test_configure_runnable_tracing_adds_callbacks_and_metadata(monkeypatch):
+    config: dict = {"configurable": {"thread_id": "thread-1"}}
+
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: ["smith-callback", "langfuse-callback"])
+
+    result = tracing_factory.configure_runnable_tracing(
+        config,
+        metadata={"run_id": "run-1", "agent_name": "lead"},
+    )
+
+    assert result["callbacks"] == ["smith-callback", "langfuse-callback"]
+    assert result["metadata"] == {"run_id": "run-1", "agent_name": "lead"}
+
+
+def test_configure_runnable_tracing_merges_existing_metadata(monkeypatch):
+    config: dict = {
+        "configurable": {"thread_id": "thread-1"},
+        "metadata": {"agent_name": "existing", "model_name": "gpt-4"},
+    }
+
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: ["smith-callback"])
+
+    result = tracing_factory.configure_runnable_tracing(
+        config,
+        metadata={"run_id": "run-1", "agent_name": "lead"},
+    )
+
+    assert result["callbacks"] == ["smith-callback"]
+    assert result["metadata"] == {
+        "agent_name": "lead",
+        "model_name": "gpt-4",
+        "run_id": "run-1",
+    }
+
+
+def test_configure_runnable_tracing_leaves_config_unchanged_when_disabled(monkeypatch):
+    config: dict = {"configurable": {"thread_id": "thread-1"}}
+
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: [])
+
+    result = tracing_factory.configure_runnable_tracing(
+        config,
+        metadata={"run_id": "run-1"},
+    )
+
+    assert result == {"configurable": {"thread_id": "thread-1"}}
+
+
+def test_bind_runnable_tracing_uses_with_config(monkeypatch):
+    class FakeRunnable:
+        def __init__(self):
+            self.bound_config = None
+
+        def with_config(self, config):
+            self.bound_config = config
+            return self
+
+    runnable = FakeRunnable()
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: ["langfuse-callback"])
+
+    result = tracing_factory.bind_runnable_tracing(
+        runnable,
+        metadata={"thread_id": "thread-1", "run_id": "run-1"},
+    )
+
+    assert result is runnable
+    assert runnable.bound_config == {
+        "callbacks": ["langfuse-callback"],
+        "metadata": {"thread_id": "thread-1", "run_id": "run-1"},
+    }
+
+
+def test_bind_runnable_tracing_is_noop_when_disabled(monkeypatch):
+    runnable = object()
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: [])
+
+    result = tracing_factory.bind_runnable_tracing(runnable, metadata={"thread_id": "thread-1"})
+
+    assert result is runnable
+
+
+def test_bind_runnable_tracing_is_idempotent(monkeypatch):
+    class FakeRunnable:
+        def with_config(self, config):
+            raise AssertionError("with_config should not be called when tracing is already bound")
+
+    runnable = FakeRunnable()
+    setattr(runnable, "_deerflow_tracing_bound", True)
+    monkeypatch.setattr(tracing_factory, "build_tracing_callbacks", lambda: ["langfuse-callback"])
+
+    result = tracing_factory.bind_runnable_tracing(runnable, metadata={"thread_id": "thread-1"})
+
+    assert result is runnable

@@ -8,7 +8,6 @@ from deerflow.config import (
     validate_enabled_tracing_providers,
 )
 
-
 def _create_langsmith_tracer(config) -> Any:
     from langchain_core.tracers.langchain import LangChainTracer
 
@@ -52,3 +51,43 @@ def build_tracing_callbacks() -> list[Any]:
                 raise RuntimeError(f"Langfuse tracing initialization failed: {exc}") from exc
 
     return callbacks
+
+
+def configure_runnable_tracing(config: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Attach tracing callbacks and metadata at the runnable/agent level."""
+    callbacks = build_tracing_callbacks()
+    if not callbacks:
+        return config
+
+    existing_callbacks = list(config.get("callbacks") or [])
+    config["callbacks"] = [*existing_callbacks, *callbacks]
+
+    if metadata:
+        existing_metadata = dict(config.get("metadata") or {})
+        config["metadata"] = {**existing_metadata, **metadata}
+
+    return config
+
+
+def bind_runnable_tracing(runnable: Any, metadata: dict[str, Any] | None = None) -> Any:
+    """Bind tracing callbacks to a runnable before stream/astream invocation.
+
+    Langfuse's LangChain handler does not reliably emit traces when callbacks
+    are only supplied via ``astream(..., config=...)``. Binding callbacks on the
+    runnable itself via ``with_config`` preserves top-level tracing for both
+    sync and async execution paths.
+    """
+    if getattr(runnable, "_deerflow_tracing_bound", False):
+        return runnable
+
+    callbacks = build_tracing_callbacks()
+    if not callbacks:
+        return runnable
+
+    config: dict[str, Any] = {"callbacks": callbacks}
+    if metadata:
+        config["metadata"] = metadata
+
+    bound_runnable = runnable.with_config(config)
+    setattr(bound_runnable, "_deerflow_tracing_bound", True)
+    return bound_runnable

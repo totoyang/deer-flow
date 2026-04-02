@@ -193,6 +193,7 @@ class TestStream:
         with (
             patch.object(client, "_ensure_agent"),
             patch.object(client, "_agent", agent),
+            patch("deerflow.client.bind_runnable_tracing", return_value=agent),
         ):
             events = list(client.stream("hi", thread_id="t1"))
 
@@ -211,6 +212,7 @@ class TestStream:
         with (
             patch.object(client, "_ensure_agent"),
             patch.object(client, "_agent", agent),
+            patch("deerflow.client.bind_runnable_tracing", return_value=agent),
         ):
             list(client.stream("hi", thread_id="t1"))
 
@@ -218,7 +220,20 @@ class TestStream:
         agent.stream.assert_called_once()
         call_kwargs = agent.stream.call_args.kwargs
         assert call_kwargs["context"]["thread_id"] == "t1"
-        assert call_kwargs["context"]["agent_name"] == "test-agent-1"
+
+    def test_stream_binds_tracing_to_agent(self, client):
+        agent = _make_agent_mock([{"messages": [AIMessage(content="ok", id="ai-1")]}])
+        traced_agent = _make_agent_mock([{"messages": [AIMessage(content="ok", id="ai-1")]}])
+
+        with (
+            patch.object(client, "_ensure_agent"),
+            patch.object(client, "_agent", agent),
+            patch("deerflow.client.bind_runnable_tracing", return_value=traced_agent) as mock_bind,
+        ):
+            list(client.stream("hi", thread_id="t1"))
+
+        mock_bind.assert_called_once_with(agent, metadata={"thread_id": "t1"})
+        traced_agent.stream.assert_called_once()
 
     def test_tool_call_and_result(self, client):
         """stream() emits messages-tuple events for tool calls and results."""
@@ -404,6 +419,15 @@ class TestEnsureAgent:
         assert mock_build_middlewares.call_args.kwargs.get("agent_name") == "custom-agent"
         mock_apply_prompt.assert_called_once()
         assert mock_apply_prompt.call_args.kwargs.get("agent_name") == "custom-agent"
+
+
+class TestRunnableConfig:
+    def test_get_runnable_config_does_not_attach_tracing_callbacks(self, client):
+        config = client._get_runnable_config("t1")
+
+        assert config["configurable"]["thread_id"] == "t1"
+        assert "callbacks" not in config
+        assert "metadata" not in config
 
     def test_uses_default_checkpointer_when_available(self, client):
         mock_agent = MagicMock()
