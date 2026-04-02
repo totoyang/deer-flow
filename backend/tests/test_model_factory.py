@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from langchain.chat_models import BaseChatModel
+from langchain_core.callbacks import BaseCallbackHandler
 
 from deerflow.config.app_config import AppConfig
 from deerflow.config.model_config import ModelConfig
@@ -69,6 +70,10 @@ class FakeChatModel(BaseChatModel):
         raise NotImplementedError
 
 
+class DummyCallbackHandler(BaseCallbackHandler):
+    pass
+
+
 def _patch_factory(monkeypatch, app_config: AppConfig, model_class=FakeChatModel):
     """Patch get_app_config, resolve_class, and tracing for isolated unit tests."""
     monkeypatch.setattr(factory_module, "get_app_config", lambda: app_config)
@@ -107,6 +112,19 @@ def test_does_not_attach_tracing_callbacks_to_model_instances(monkeypatch):
     model = factory_module.create_chat_model(name="alpha")
 
     assert model.callbacks is None
+
+
+def test_attaches_tracing_callbacks_when_requested(monkeypatch):
+    cfg = _make_app_config([_make_model("alpha")])
+    _patch_factory(monkeypatch, cfg)
+
+    traced_callback = DummyCallbackHandler()
+    monkeypatch.setattr(factory_module, "build_tracing_callbacks", lambda: [traced_callback])
+
+    FakeChatModel.captured_kwargs = {}
+    model = factory_module.create_chat_model(name="alpha", attach_tracing_callbacks=True)
+
+    assert model.callbacks == [traced_callback]
 
 
 # ---------------------------------------------------------------------------

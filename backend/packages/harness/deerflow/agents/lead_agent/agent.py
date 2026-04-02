@@ -19,7 +19,7 @@ from deerflow.config.agents_config import load_agent_config
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
-from deerflow.tracing import configure_runnable_tracing
+from deerflow.tracing import bind_runnable_tracing, configure_runnable_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -329,22 +329,37 @@ def make_lead_agent(config: RunnableConfig):
             "thread_id": cfg.get("thread_id"),
         }
     )
-    configure_runnable_tracing(config, metadata=config.get("metadata"))
+    configure_runnable_tracing(
+        config,
+        metadata=config.get("metadata"),
+        attach_callbacks=False,
+    )
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
         agent = create_agent(
-            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
+            model=create_chat_model(
+                name=model_name,
+                thinking_enabled=thinking_enabled,
+                attach_tracing_callbacks="__pregel_runtime" not in cfg,
+            ),
             tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent],
             middleware=_build_middlewares(config, model_name=model_name),
             system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"])),
             state_schema=ThreadState,
         )
+        if "__pregel_runtime" in cfg:
+            agent = bind_runnable_tracing(agent, metadata=config.get("metadata"))
         return agent
 
     # Default lead agent (unchanged behavior)
     agent = create_agent(
-        model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
+        model=create_chat_model(
+            name=model_name,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
+            attach_tracing_callbacks="__pregel_runtime" not in cfg,
+        ),
         tools=get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled),
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
@@ -352,4 +367,6 @@ def make_lead_agent(config: RunnableConfig):
         ),
         state_schema=ThreadState,
     )
+    if "__pregel_runtime" in cfg:
+        agent = bind_runnable_tracing(agent, metadata=config.get("metadata"))
     return agent

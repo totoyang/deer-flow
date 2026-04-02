@@ -2,9 +2,16 @@ from langchain.chat_models import BaseChatModel
 
 from deerflow.config import get_app_config
 from deerflow.reflection import resolve_class
+from deerflow.tracing import build_tracing_callbacks
 
 
-def create_chat_model(name: str | None = None, thinking_enabled: bool = False, **kwargs) -> BaseChatModel:
+def create_chat_model(
+    name: str | None = None,
+    thinking_enabled: bool = False,
+    *,
+    attach_tracing_callbacks: bool = False,
+    **kwargs,
+) -> BaseChatModel:
     """Create a chat model instance from the config.
 
     Args:
@@ -56,6 +63,12 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
             kwargs.update({"thinking": {"type": "disabled"}})
     if not model_config.supports_reasoning_effort and "reasoning_effort" in kwargs:
         del kwargs["reasoning_effort"]
+
+    if attach_tracing_callbacks:
+        tracing_callbacks = build_tracing_callbacks()
+        if tracing_callbacks:
+            existing_callbacks = list(kwargs.get("callbacks") or [])
+            kwargs["callbacks"] = [*existing_callbacks, *tracing_callbacks]
 
     # For Codex Responses API models: map thinking mode to reasoning_effort
     from deerflow.models.openai_codex_provider import CodexChatModel

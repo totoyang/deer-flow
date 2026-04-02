@@ -54,14 +54,18 @@ def build_tracing_callbacks() -> list[Any]:
     return callbacks
 
 
-def configure_runnable_tracing(config: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Attach tracing callbacks and metadata at the runnable/agent level."""
-    callbacks = build_tracing_callbacks()
-    if not callbacks:
-        return config
-
-    existing_callbacks = list(config.get("callbacks") or [])
-    config["callbacks"] = [*existing_callbacks, *callbacks]
+def configure_runnable_tracing(
+    config: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+    *,
+    attach_callbacks: bool = True,
+) -> dict[str, Any]:
+    """Attach tracing metadata and, optionally, callbacks to runnable config."""
+    if attach_callbacks:
+        callbacks = build_tracing_callbacks()
+        if callbacks:
+            existing_callbacks = list(config.get("callbacks") or [])
+            config["callbacks"] = [*existing_callbacks, *callbacks]
 
     if metadata:
         existing_metadata = dict(config.get("metadata") or {})

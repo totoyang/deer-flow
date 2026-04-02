@@ -100,13 +100,6 @@ async def run_agent(
 
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
-        agent = bind_runnable_tracing(
-            agent,
-            metadata={
-                "run_id": run_id,
-                "thread_id": thread_id,
-            },
-        )
 
         # 4. Attach checkpointer and store
         if checkpointer is not None:
@@ -119,6 +112,14 @@ async def run_agent(
             agent.interrupt_before_nodes = interrupt_before
         if interrupt_after:
             agent.interrupt_after_nodes = interrupt_after
+
+        agent = bind_runnable_tracing(
+            agent,
+            metadata={
+                "run_id": run_id,
+                "thread_id": thread_id,
+            },
+        )
 
         # 6. Build LangGraph stream_mode list
         #    "events" is NOT a valid astream mode — skip it

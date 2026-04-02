@@ -87,10 +87,11 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
 
     captured: dict[str, object] = {}
 
-    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, attach_tracing_callbacks=False):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort
+        captured["attach_tracing_callbacks"] = attach_tracing_callbacks
         return object()
 
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
@@ -110,6 +111,159 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
     assert captured["name"] == "safe-model"
     assert captured["thinking_enabled"] is False
     assert result["model"] is not None
+
+
+def test_make_lead_agent_keeps_config_tracing_metadata_only_for_direct_langgraph_runs(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    captured: dict[str, object] = {}
+
+    def _capture_tracing(config, metadata=None, *, attach_callbacks=True):
+        captured["metadata"] = metadata
+        captured["attach_callbacks"] = attach_callbacks
+        return config
+
+    monkeypatch.setattr(lead_agent_module, "configure_runnable_tracing", _capture_tracing)
+
+    lead_agent_module.make_lead_agent(
+        {
+            "configurable": {
+                "model_name": "safe-model",
+                "thinking_enabled": False,
+                "is_plan_mode": False,
+                "subagent_enabled": False,
+            }
+        }
+    )
+
+    assert captured["attach_callbacks"] is False
+
+
+def test_make_lead_agent_binds_tracing_on_direct_langgraph_runs(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "configure_runnable_tracing", lambda config, metadata=None, *, attach_callbacks=True: config)
+
+    fake_runnable = object()
+    captured: dict[str, object] = {}
+
+    def _capture_create_chat_model(**kwargs):
+        captured["model_kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", _capture_create_chat_model)
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: fake_runnable)
+
+    def _unexpected_bind(runnable, metadata=None):
+        raise AssertionError("bind_runnable_tracing should not be called for direct langgraph runs")
+
+    monkeypatch.setattr(lead_agent_module, "bind_runnable_tracing", _unexpected_bind)
+
+    result = lead_agent_module.make_lead_agent(
+        {
+            "configurable": {
+                "model_name": "safe-model",
+                "thinking_enabled": False,
+                "is_plan_mode": False,
+                "subagent_enabled": False,
+            }
+        }
+    )
+
+    assert captured["model_kwargs"]["attach_tracing_callbacks"] is True
+    assert result is fake_runnable
+
+
+def test_make_lead_agent_skips_config_callbacks_for_compat_worker_runs(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    captured: dict[str, object] = {}
+
+    def _capture_tracing(config, metadata=None, *, attach_callbacks=True):
+        captured["metadata"] = metadata
+        captured["attach_callbacks"] = attach_callbacks
+        return config
+
+    monkeypatch.setattr(lead_agent_module, "configure_runnable_tracing", _capture_tracing)
+
+    lead_agent_module.make_lead_agent(
+        {
+            "configurable": {
+                "__pregel_runtime": object(),
+                "model_name": "safe-model",
+                "thinking_enabled": False,
+                "is_plan_mode": False,
+                "subagent_enabled": False,
+            }
+        }
+    )
+
+    assert captured["attach_callbacks"] is False
+
+
+def test_make_lead_agent_skips_runnable_binding_for_compat_worker_runs(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "configure_runnable_tracing", lambda config, metadata=None, *, attach_callbacks=True: config)
+
+    fake_runnable = object()
+    captured: dict[str, object] = {}
+
+    def _capture_create_chat_model(**kwargs):
+        captured["model_kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", _capture_create_chat_model)
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: fake_runnable)
+
+    def _capture_bind(runnable, metadata=None):
+        captured["bound_runnable"] = runnable
+        captured["bound_metadata"] = metadata
+        return "bound-runnable"
+
+    monkeypatch.setattr(lead_agent_module, "bind_runnable_tracing", _capture_bind)
+
+    result = lead_agent_module.make_lead_agent(
+        {
+            "configurable": {
+                "__pregel_runtime": object(),
+                "model_name": "safe-model",
+                "thinking_enabled": False,
+                "is_plan_mode": False,
+                "subagent_enabled": False,
+            }
+        }
+    )
+
+    assert captured["model_kwargs"]["attach_tracing_callbacks"] is False
+    assert captured["bound_runnable"] is fake_runnable
+    assert result == "bound-runnable"
 
 
 def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):

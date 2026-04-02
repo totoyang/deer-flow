@@ -218,7 +218,35 @@ def test_configure_runnable_tracing_leaves_config_unchanged_when_disabled(monkey
         metadata={"run_id": "run-1"},
     )
 
-    assert result == {"configurable": {"thread_id": "thread-1"}}
+    assert result == {
+        "configurable": {"thread_id": "thread-1"},
+        "metadata": {"run_id": "run-1"},
+    }
+
+
+def test_configure_runnable_tracing_can_merge_metadata_without_callbacks(monkeypatch):
+    config: dict = {
+        "configurable": {"thread_id": "thread-1"},
+        "metadata": {"agent_name": "existing"},
+    }
+
+    monkeypatch.setattr(
+        tracing_factory,
+        "build_tracing_callbacks",
+        lambda: (_ for _ in ()).throw(AssertionError("callbacks should not be built")),
+    )
+
+    result = tracing_factory.configure_runnable_tracing(
+        config,
+        metadata={"run_id": "run-1"},
+        attach_callbacks=False,
+    )
+
+    assert "callbacks" not in result
+    assert result["metadata"] == {
+        "agent_name": "existing",
+        "run_id": "run-1",
+    }
 
 
 def test_bind_runnable_tracing_uses_with_config(monkeypatch):
