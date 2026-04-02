@@ -94,7 +94,6 @@ def test_uses_first_model_when_name_is_none(monkeypatch):
 def test_raises_when_model_not_found(monkeypatch):
     cfg = _make_app_config([_make_model("only-model")])
     monkeypatch.setattr(factory_module, "get_app_config", lambda: cfg)
-    monkeypatch.setattr(factory_module, "build_tracing_callbacks", lambda: [])
 
     with pytest.raises(ValueError, match="ghost-model"):
         factory_module.create_chat_model(name="ghost-model")
@@ -107,7 +106,7 @@ def test_does_not_attach_tracing_callbacks_to_model_instances(monkeypatch):
     FakeChatModel.captured_kwargs = {}
     model = factory_module.create_chat_model(name="alpha")
 
-    assert model.callbacks == []
+    assert model.callbacks is None
 
 
 # ---------------------------------------------------------------------------
