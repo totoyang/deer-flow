@@ -2,12 +2,41 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from deerflow.tracing import factory as tracing_factory
 
 
+@pytest.fixture(autouse=True)
+def clear_tracing_env(monkeypatch):
+    from deerflow.config import tracing_config as tracing_module
+
+    for name in (
+        "LANGSMITH_TRACING",
+        "LANGCHAIN_TRACING_V2",
+        "LANGCHAIN_TRACING",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGSMITH_ENDPOINT",
+        "LANGCHAIN_ENDPOINT",
+        "LANGFUSE_TRACING",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    tracing_module._tracing_config = None
+    yield
+    tracing_module._tracing_config = None
+
+
 def test_build_tracing_callbacks_returns_empty_list_when_disabled(monkeypatch):
+    monkeypatch.setattr(tracing_factory, "validate_enabled_tracing_providers", lambda: None)
     monkeypatch.setattr(tracing_factory, "get_enabled_tracing_providers", lambda: [])
 
     callbacks = tracing_factory.build_tracing_callbacks()
@@ -84,6 +113,18 @@ def test_build_tracing_callbacks_raises_when_enabled_provider_fails(monkeypatch)
         tracing_factory.build_tracing_callbacks()
 
 
+def test_build_tracing_callbacks_raises_for_explicitly_enabled_misconfigured_provider(monkeypatch):
+    from deerflow.config import tracing_config as tracing_module
+
+    monkeypatch.setenv("LANGFUSE_TRACING", "true")
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    tracing_module._tracing_config = None
+
+    with pytest.raises(ValueError, match="LANGFUSE_PUBLIC_KEY"):
+        tracing_factory.build_tracing_callbacks()
+
+
 def test_create_langfuse_handler_initializes_client_before_handler(monkeypatch):
     calls: list[tuple[str, dict]] = []
 
@@ -95,8 +136,12 @@ def test_create_langfuse_handler_initializes_client_before_handler(monkeypatch):
         def __init__(self, **kwargs):
             calls.append(("handler", kwargs))
 
-    monkeypatch.setattr(tracing_factory, "Langfuse", FakeLangfuse)
-    monkeypatch.setattr(tracing_factory, "LangfuseCallbackHandler", FakeCallbackHandler)
+    fake_langfuse_module = types.ModuleType("langfuse")
+    fake_langfuse_module.Langfuse = FakeLangfuse
+    fake_langfuse_langchain_module = types.ModuleType("langfuse.langchain")
+    fake_langfuse_langchain_module.CallbackHandler = FakeCallbackHandler
+    monkeypatch.setitem(sys.modules, "langfuse", fake_langfuse_module)
+    monkeypatch.setitem(sys.modules, "langfuse.langchain", fake_langfuse_langchain_module)
 
     cfg = type(
         "LangfuseCfg",

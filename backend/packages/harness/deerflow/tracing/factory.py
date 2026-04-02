@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from langfuse import Langfuse
-from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
-
 from deerflow.config import (
     get_enabled_tracing_providers,
     get_tracing_config,
@@ -19,6 +16,9 @@ def _create_langsmith_tracer(config) -> Any:
 
 
 def _create_langfuse_handler(config) -> Any:
+    from langfuse import Langfuse
+    from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
+
     # langfuse>=4 initializes project-specific credentials through the client
     # singleton; the LangChain callback then attaches to that configured client.
     Langfuse(
@@ -31,11 +31,11 @@ def _create_langfuse_handler(config) -> Any:
 
 def build_tracing_callbacks() -> list[Any]:
     """Build callbacks for all explicitly enabled tracing providers."""
+    validate_enabled_tracing_providers()
     enabled_providers = get_enabled_tracing_providers()
     if not enabled_providers:
         return []
 
-    validate_enabled_tracing_providers()
     tracing_config = get_tracing_config()
     callbacks: list[Any] = []
 

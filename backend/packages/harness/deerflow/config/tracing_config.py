@@ -58,6 +58,15 @@ class TracingConfig(BaseModel):
         return bool(self.enabled_providers)
 
     @property
+    def explicitly_enabled_providers(self) -> list[str]:
+        enabled: list[str] = []
+        if self.langsmith.enabled:
+            enabled.append("langsmith")
+        if self.langfuse.enabled:
+            enabled.append("langfuse")
+        return enabled
+
+    @property
     def enabled_providers(self) -> list[str]:
         enabled: list[str] = []
         if self.langsmith.is_configured:
@@ -123,6 +132,11 @@ def get_tracing_config() -> TracingConfig:
 def get_enabled_tracing_providers() -> list[str]:
     """Return the configured tracing providers that are enabled and complete."""
     return get_tracing_config().enabled_providers
+
+
+def get_explicitly_enabled_tracing_providers() -> list[str]:
+    """Return tracing providers explicitly enabled by config, even if incomplete."""
+    return get_tracing_config().explicitly_enabled_providers
 
 
 def validate_enabled_tracing_providers() -> None:

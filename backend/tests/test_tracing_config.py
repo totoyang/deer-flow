@@ -11,6 +11,29 @@ def _reset_tracing_cache() -> None:
     tracing_module._tracing_config = None
 
 
+@pytest.fixture(autouse=True)
+def clear_tracing_env(monkeypatch):
+    for name in (
+        "LANGSMITH_TRACING",
+        "LANGCHAIN_TRACING_V2",
+        "LANGCHAIN_TRACING",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_PROJECT",
+        "LANGCHAIN_PROJECT",
+        "LANGSMITH_ENDPOINT",
+        "LANGCHAIN_ENDPOINT",
+        "LANGFUSE_TRACING",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    _reset_tracing_cache()
+    yield
+    _reset_tracing_cache()
+
+
 def test_prefers_langsmith_env_names(monkeypatch):
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
@@ -114,6 +137,10 @@ def test_langfuse_enabled_requires_public_and_secret_keys(monkeypatch):
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
 
     _reset_tracing_cache()
+
+    assert tracing_module.get_tracing_config().is_configured is False
+    assert tracing_module.get_enabled_tracing_providers() == []
+    assert tracing_module.get_tracing_config().explicitly_enabled_providers == ["langfuse"]
 
     with pytest.raises(ValueError, match="LANGFUSE_PUBLIC_KEY"):
         tracing_module.validate_enabled_tracing_providers()
