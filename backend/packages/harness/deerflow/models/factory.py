@@ -5,13 +5,29 @@ from deerflow.reflection import resolve_class
 from deerflow.tracing import build_tracing_callbacks
 
 
-def create_chat_model(
-    name: str | None = None,
-    thinking_enabled: bool = False,
-    *,
-    attach_tracing_callbacks: bool = False,
-    **kwargs,
-) -> BaseChatModel:
+
+def _deep_merge_dicts(base: dict | None, override: dict) -> dict:
+    """Recursively merge two dictionaries without mutating the inputs."""
+    merged = dict(base or {})
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _vllm_disable_chat_template_kwargs(chat_template_kwargs: dict) -> dict:
+    """Build the disable payload for vLLM/Qwen chat template kwargs."""
+    disable_kwargs: dict[str, bool] = {}
+    if "thinking" in chat_template_kwargs:
+        disable_kwargs["thinking"] = False
+    if "enable_thinking" in chat_template_kwargs:
+        disable_kwargs["enable_thinking"] = False
+    return disable_kwargs
+
+
+def create_chat_model(name: str | None = None, thinking_enabled: bool = False, **kwargs) -> BaseChatModel:
     """Create a chat model instance from the config.
 
     Args:
@@ -56,13 +72,23 @@ def create_chat_model(
     if not thinking_enabled and has_thinking_settings:
         if effective_wte.get("extra_body", {}).get("thinking", {}).get("type"):
             # OpenAI-compatible gateway: thinking is nested under extra_body
-            kwargs.update({"extra_body": {"thinking": {"type": "disabled"}}})
-            kwargs.update({"reasoning_effort": "minimal"})
+            model_settings_from_config["extra_body"] = _deep_merge_dicts(
+                model_settings_from_config.get("extra_body"),
+                {"thinking": {"type": "disabled"}},
+            )
+            model_settings_from_config["reasoning_effort"] = "minimal"
+        elif disable_chat_template_kwargs := _vllm_disable_chat_template_kwargs(effective_wte.get("extra_body", {}).get("chat_template_kwargs") or {}):
+            # vLLM uses chat template kwargs to switch thinking on/off.
+            model_settings_from_config["extra_body"] = _deep_merge_dicts(
+                model_settings_from_config.get("extra_body"),
+                {"chat_template_kwargs": disable_chat_template_kwargs},
+            )
         elif effective_wte.get("thinking", {}).get("type"):
             # Native langchain_anthropic: thinking is a direct constructor parameter
-            kwargs.update({"thinking": {"type": "disabled"}})
-    if not model_config.supports_reasoning_effort and "reasoning_effort" in kwargs:
-        del kwargs["reasoning_effort"]
+            model_settings_from_config["thinking"] = {"type": "disabled"}
+    if not model_config.supports_reasoning_effort:
+        kwargs.pop("reasoning_effort", None)
+        model_settings_from_config.pop("reasoning_effort", None)
 
     if attach_tracing_callbacks:
         tracing_callbacks = build_tracing_callbacks()
