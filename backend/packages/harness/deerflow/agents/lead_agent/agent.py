@@ -18,6 +18,7 @@ from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
+from deerflow.tracing import build_langfuse_handler
 from deerflow.models import create_chat_model
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,19 @@ def make_lead_agent(config: RunnableConfig):
             "subagent_enabled": subagent_enabled,
         }
     )
+
+    # Inject Langfuse callback at the root invocation config so the entire
+    # LangGraph run becomes a single Langfuse trace and all node / LLM / tool
+    # calls nest as child spans. LangSmith needs no wiring here — langchain-core
+    # auto-injects LangChainTracer when LANGSMITH_TRACING is set.
+    langfuse_handler = build_langfuse_handler()
+    if langfuse_handler is not None:
+        existing_callbacks = config.get("callbacks") or []
+        if not isinstance(existing_callbacks, list):
+            existing_callbacks = list(existing_callbacks)
+        if langfuse_handler not in existing_callbacks:
+            config["callbacks"] = [*existing_callbacks, langfuse_handler]
+        logger.info("Langfuse tracing callback attached at graph invocation root")
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow

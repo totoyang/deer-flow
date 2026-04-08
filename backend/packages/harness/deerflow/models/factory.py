@@ -4,7 +4,6 @@ from langchain.chat_models import BaseChatModel
 
 from deerflow.config import get_app_config
 from deerflow.reflection import resolve_class
-from deerflow.tracing import build_tracing_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +110,8 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
 
     model_instance = model_class(**kwargs, **model_settings_from_config)
 
-    callbacks = build_tracing_callbacks()
-    if callbacks:
-        existing_callbacks = model_instance.callbacks or []
-        model_instance.callbacks = [*existing_callbacks, *callbacks]
-        logger.debug(f"Tracing attached to model '{name}' with providers={len(callbacks)}")
+    # Tracing callbacks (Langfuse) are attached at the graph runnable level in
+    # ``make_lead_agent``, not at the model level. Model-level callbacks would
+    # form their own root callback manager and break trace nesting. LangSmith
+    # is auto-injected by langchain-core when ``LANGSMITH_TRACING`` is set.
     return model_instance
