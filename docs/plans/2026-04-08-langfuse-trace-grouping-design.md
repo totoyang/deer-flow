@@ -14,12 +14,14 @@ LangSmith does not show this symptom because LangSmith's `LangChainTracer` is au
 
 ## Fix
 
-Attach the Langfuse handler at the **graph runnable** level, not the model level. The handler then participates in the root callback manager of every `agent.astream()` / `agent.ainvoke()` call, and all child runs (nodes, LLM calls, tool calls) are recorded as spans of one trace.
+Attach the Langfuse handler at the **invocation config root**, not the model level. The handler then participates in the root callback manager of every `agent.astream()` / `agent.ainvoke()` call, and all child runs (nodes, LLM calls, tool calls) are recorded as spans of one trace.
 
-Concretely, in `make_lead_agent()`, after `create_agent(...)` returns the compiled graph, wrap it with `compiled.with_config({"callbacks": [langfuse_handler]})` when Langfuse is enabled. This works for both runtime modes:
+Concretely, in `make_lead_agent(config)`, append the handler to `config["callbacks"]` before returning the compiled graph. Both runtime modes pass the very same `RunnableConfig` dict into graph execution afterward:
 
-- **Standard mode**: LangGraph Server invokes the returned runnable; `with_config` defaults are merged into the runtime config by langchain-core.
-- **Gateway mode**: `runtime/runs/worker.py:145` invokes via `agent.astream(graph_input, config=runnable_config, ...)`. Same merge applies.
+- **Standard mode**: LangGraph Server calls `make_lead_agent(config)` per invocation with the request's RunnableConfig, then invokes the returned graph with the same config.
+- **Gateway mode**: `runtime/runs/worker.py` calls `agent_factory(config=runnable_config)` and then `agent.astream(graph_input, config=runnable_config, ...)` using the same dict.
+
+This mutation pattern is consistent with how `make_lead_agent` already populates `config["metadata"]` for trace tagging (a few lines above). An alternative — wrapping the compiled graph with `compiled.with_config({"callbacks": [handler]})` — was considered but rejected because it would return a `RunnableBinding` instead of a `CompiledStateGraph`, which breaks LangGraph Server's subsequent attribute writes (e.g. `agent.checkpointer = ...`).
 
 Single injection point covers both modes.
 
@@ -37,14 +39,17 @@ Single injection point covers both modes.
 
 ### 3. `packages/harness/deerflow/agents/lead_agent/agent.py`
 
-- In `make_lead_agent()`, after both `create_agent(...)` return points (bootstrap branch and default branch), apply:
+- In `make_lead_agent(config)`, after the existing `config["metadata"].update(...)` block and before the `create_agent(...)` calls, append the Langfuse handler to `config["callbacks"]`:
   ```python
   langfuse_handler = build_langfuse_handler()
   if langfuse_handler is not None:
-      compiled = compiled.with_config({"callbacks": [langfuse_handler]})
-  return compiled
+      existing = config.get("callbacks") or []
+      if not isinstance(existing, list):
+          existing = list(existing)
+      config["callbacks"] = [*existing, langfuse_handler]
   ```
 - Build the handler **once per `make_lead_agent` call** (not module-level), so config reload picks it up on subsequent invocations.
+- `create_agent(...)` return value is unchanged — both bootstrap and default branches return the compiled graph directly, as before.
 
 ### 4. Tests
 

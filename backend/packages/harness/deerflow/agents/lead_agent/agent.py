@@ -333,13 +333,16 @@ def make_lead_agent(config: RunnableConfig):
     # LangGraph run becomes a single Langfuse trace and all node / LLM / tool
     # calls nest as child spans. LangSmith needs no wiring here — langchain-core
     # auto-injects LangChainTracer when LANGSMITH_TRACING is set.
+    #
+    # Note: ``make_lead_agent`` is called once per request with a fresh config
+    # dict, so we do not guard against duplicate injection — each invocation
+    # starts clean.
     langfuse_handler = build_langfuse_handler()
     if langfuse_handler is not None:
         existing_callbacks = config.get("callbacks") or []
         if not isinstance(existing_callbacks, list):
             existing_callbacks = list(existing_callbacks)
-        if langfuse_handler not in existing_callbacks:
-            config["callbacks"] = [*existing_callbacks, langfuse_handler]
+        config["callbacks"] = [*existing_callbacks, langfuse_handler]
         logger.info("Langfuse tracing callback attached at graph invocation root")
 
     if is_bootstrap:

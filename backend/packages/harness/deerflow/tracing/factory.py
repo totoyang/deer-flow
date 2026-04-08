@@ -26,8 +26,12 @@ def _create_langfuse_handler(config) -> Any:
 def build_langfuse_handler() -> Any | None:
     """Build a Langfuse LangChain CallbackHandler if Langfuse tracing is enabled.
 
-    Returns ``None`` when Langfuse is not configured. Raises ``RuntimeError`` if
-    Langfuse is explicitly enabled but its initialization fails.
+    Returns ``None`` when Langfuse is not configured. Raises ``ValueError`` via
+    ``validate_enabled_tracing_providers()`` when a tracing provider is
+    explicitly enabled but its required environment variables are missing.
+    Raises ``RuntimeError`` when Langfuse is enabled and configured but the
+    ``CallbackHandler`` construction itself fails (e.g. unreachable host or
+    incompatible ``langfuse`` package version).
 
     LangSmith is intentionally not handled here: when ``LANGSMITH_TRACING`` is
     set, ``langchain_core.callbacks.manager`` auto-injects ``LangChainTracer``

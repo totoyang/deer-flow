@@ -297,6 +297,13 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
 - Supports `supports_vision` flag for image understanding models
 - Config values starting with `$` resolved as environment variables
 - Missing provider modules surface actionable install hints from reflection resolvers (for example `uv add langchain-google-genai`)
+- **Tracing is NOT attached at the model level.** Model-level callbacks form a local root callback manager and break trace nesting in Langfuse (every LLM call would become its own root trace).
+
+### Tracing (`packages/harness/deerflow/tracing/factory.py`)
+
+- **Langfuse**: `build_langfuse_handler()` returns a `CallbackHandler` when Langfuse is enabled via `LANGFUSE_TRACING` + keys. It is injected into `config["callbacks"]` at the top of `make_lead_agent(config)` — i.e. at the **graph invocation root**, before `create_agent(...)` runs. This makes a single LangGraph run produce one Langfuse trace with all node / LLM / tool calls as child spans. Works for both standard (LangGraph Server) and Gateway runtime modes because both reuse the same `RunnableConfig` dict for factory construction and graph invocation.
+- **LangSmith**: no application-level wiring needed. When `LANGSMITH_TRACING` (or `LANGCHAIN_TRACING_V2`) is set, `langchain_core.callbacks.manager` auto-injects `LangChainTracer` into the root callback manager of every run.
+- **Out of scope (follow-up)**: subagent traces do not yet link to the parent because `SubagentExecutor` runs subagents on a separate thread pool, breaking asyncio contextvar propagation of the parent run_id.
 
 ### vLLM Provider (`packages/harness/deerflow/models/vllm_provider.py`)
 
