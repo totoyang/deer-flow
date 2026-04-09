@@ -18,8 +18,8 @@ from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
-from deerflow.tracing import build_langfuse_handler
 from deerflow.models import create_chat_model
+from deerflow.tracing import build_langfuse_handler
 
 logger = logging.getLogger(__name__)
 
