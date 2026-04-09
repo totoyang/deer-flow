@@ -297,7 +297,7 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
 - Supports `supports_vision` flag for image understanding models
 - Config values starting with `$` resolved as environment variables
 - Missing provider modules surface actionable install hints from reflection resolvers (for example `uv add langchain-google-genai`)
-- **Tracing is NOT attached at the model level.** Model-level callbacks form a local root callback manager and break trace nesting in Langfuse (every LLM call would become its own root trace).
+- **Tracing attachment is opt-in/opt-out via ``attach_tracing`` (default ``True``).** Standalone callers — anything that invokes a model outside a LangGraph run that already wires Langfuse at the invocation root (e.g. ``MemoryUpdater``, ``security_scanner``, ``SubagentExecutor``, ``DeerFlowClient``) — keep the default so the Langfuse callback is attached directly to the model and those flows still appear in Langfuse. Graph callers that already inject the handler at the invocation root (``make_lead_agent``, the in-graph ``TitleMiddleware``) MUST pass ``attach_tracing=False``; otherwise model-level callbacks form a local root callback manager and break trace nesting (every LLM call becomes its own root trace).
 
 ### Tracing (`packages/harness/deerflow/tracing/factory.py`)
 
